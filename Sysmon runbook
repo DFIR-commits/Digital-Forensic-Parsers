@@ -1,0 +1,53 @@
+Exact commands — full working runbook
+
+1. Indexer (192.168.179.130) — enable receiving from forwarders:
+/opt/splunk/bin/splunk enable listen 9997 -auth admin:<indexer_admin_password>
+systemctl restart Splunkd
+
+2. Target Windows box (192.168.179.131) — download and install Sysmon:
+Invoke-WebRequest -Uri "https://download.sysinternals.com/files/Sysmon.zip" -OutFile "C:\Windows\Temp\Sysmon.zip"
+Expand-Archive -Path "C:\Windows\Temp\Sysmon.zip" -DestinationPath "C:\Windows\Temp\Sysmon" -Force
+
+3. Sysmon config (C:\Windows\Temp\sysmonconfig.xml) — this is the piece that makes deleted .gz/.gzip files recoverable:
+<Sysmon schemaversion="4.90">
+  <!-- .gz/.gzip deletes are intercepted and copied to ArchiveDirectory before the delete completes -->
+  <ArchiveDirectory>Sysmon</ArchiveDirectory>
+  <EventFiltering>
+    <RuleGroup name="" groupRelation="or">
+      <FileCreate onmatch="include">
+        <TargetFilename condition="end with">.gz</TargetFilename>
+        <TargetFilename condition="end with">.gzip</TargetFilename>
+      </FileCreate>
+    </RuleGroup>
+    <RuleGroup name="" groupRelation="or">
+      <FileDelete onmatch="include">
+        <TargetFilename condition="end with">.gz</TargetFilename>
+        <TargetFilename condition="end with">.gzip</TargetFilename>
+      </FileDelete>
+    </RuleGroup>
+  </EventFiltering>
+</Sysmon>
+& C:\Windows\Temp\Sysmon\Sysmon64.exe -accepteula -i C:\Windows\Temp\sysmonconfig.xml
+Recovered files land at C:\Sysmon\<sha256-of-file>.gz — filename is the file's own hash, original name/path is in the Sysmon Event ID 23 log entry.
+
+4. Install the Splunk Universal Forwarder, pointed at the indexer:
+Invoke-WebRequest -Uri "https://download.splunk.com/products/universalforwarder/releases/10.4.3/windows/splunkforwarder-10.4.3-4174a2deda5d-windows-x64.msi" -OutFile "C:\Windows\Temp\splunkforwarder.msi"
+
+msiexec.exe /i C:\Windows\Temp\splunkforwarder.msi AGREETOLICENSE=Yes SPLUNKUSERNAME=admin SPLUNKPASSWORD="<uf_admin_password>" RECEIVING_INDEXER="192.168.179.130:9997" /quiet /norestart /log C:\Windows\Temp\uf_install.log
+
+5. Tell the forwarder to monitor the Sysmon log — C:\Program Files\SplunkUniversalForwarder\etc\system\local\inputs.conf:
+[WinEventLog://Microsoft-Windows-Sysmon/Operational]
+disabled = 0
+index = main
+renderXml = false
+
+6. The critical gotcha — grant the forwarder's service account permission to read the Sysmon channel. The UF service runs as the virtual account NT SERVICE\SplunkForwarder, and the Sysmon event log channel's ACL only allows SYSTEM, Administrators, Backup/Server Operators, and Event Log Readers. Without this step you get errorCode=5 (access denied) and nothing ever forwards:
+Add-LocalGroupMember -Group "Event Log Readers" -Member "NT SERVICE\SplunkForwarder"
+Restart-Service SplunkForwarder -Force
+
+7. Verify:
+& "C:\Program Files\SplunkUniversalForwarder\bin\splunk.exe" list forward-server -auth admin:<uf_admin_password>
+# should show: Active forwards: 192.168.179.130:9997
+/opt/splunk/bin/splunk search 'index=main sourcetype=WinEventLog:Microsoft-Windows-Sysmon/Operational EventCode=23 TargetFilename=*.gz' -auth admin:<indexer_admin_password>
+
+---
