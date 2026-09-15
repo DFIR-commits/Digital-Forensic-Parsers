@@ -34,5 +34,15 @@ print(si.content.about.apiType)
 "
 
 
+Prior to traveling to the customer site, the team will work with the customer to:
+
+Review and obtain the necessary approvals for the planned CrowdStrike configuration changes.
+Assist with configuring CrowdStrike SOAR triggers and associated response actions.
+Identify and work through customer-specific configuration requirements and any issues encountered during implementation.
+Determine what infrastructure and storage requirements are necessary to support evidence preservation when automated response triggers are activated.
+Design and configure the supporting evidence-preservation infrastructure so that forensic artifacts can be collected and retained when response actions are initiated.
+Configure and validate a Sysmon deployment and Splunk Universal Forwarder integration with the deployment kit.
+Validate connectivity, permissions, and other technical prerequisites required for the on-site deployment.
+
 $ds = Get-Datastore -Name "<datastore-name>"
 Get-ChildItem -Path "vmstore:\ha-datacenter\$($ds.Name)\<vm-name>\" | Where-Object { $_.Name -like "*.vmem" -or $_.Name -like "*.vmsn" }
