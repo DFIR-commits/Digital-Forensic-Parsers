@@ -22,3 +22,13 @@ print(repr(si._stub.cookie))
 curl -k -H 'Cookie: vmware_soap_session="f7c009fb-7dc0-1f38-1d61-3a44e27886c1"' \
   "https://vc.net/folder/<vmname>/<filename>?dcPath=localhost&dsName=datastore" \
   -o /tmp/manual-test.vmsn -v
+
+
+
+python3 -c "
+from pyVim.connect import SmartConnect
+import ssl
+ctx = ssl._create_unverified_context()
+si = SmartConnect(host='<esxi-ip>', user='root', pwd='<esxi-root-password>', sslContext=ctx)
+print(si.content.about.apiType)
+"
