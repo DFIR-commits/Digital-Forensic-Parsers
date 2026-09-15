@@ -32,3 +32,7 @@ ctx = ssl._create_unverified_context()
 si = SmartConnect(host='<esxi-ip>', user='root', pwd='<esxi-root-password>', sslContext=ctx)
 print(si.content.about.apiType)
 "
+
+
+$ds = Get-Datastore -Name "<datastore-name>"
+Get-ChildItem -Path "vmstore:\ha-datacenter\$($ds.Name)\<vm-name>\" | Where-Object { $_.Name -like "*.vmem" -or $_.Name -like "*.vmsn" }
