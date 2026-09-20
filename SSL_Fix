@@ -1,0 +1,43 @@
+1. Pull the cert from your vCenter host
+bash
+python3 get_cert.py <vcenter-host-ip-or-hostname> /opt/vcenter-watcher/vcenter.pem
+
+This prints the subject and issuer so you can immediately see whether it's self-signed (subject == issuer) or CA-signed (subject != issuer).
+
+2. If subject != issuer (CA-signed, typical for vCenter with VMCA)
+
+Download the full chain from vCenter's built-in endpoint:
+
+bash
+curl -k -o /tmp/download.zip "https://<vcenter-host>/certs/download.zip"
+cd /tmp && unzip download.zip
+find /tmp -iname "*.crt" -o -iname "*.0"
+cat /tmp/certs/lin/*.0 > /opt/vcenter-watcher/vcenter-chain.pem
+
+Then verify the chain actually validates:
+
+bash
+openssl verify -CAfile /opt/vcenter-watcher/vcenter-chain.pem /opt/vcenter-watcher/vcenter.pem
+
+Should print OK. Update CA_CERT_PATH in .env to point at vcenter-chain.pem.
+
+3. If subject == issuer (self-signed, typical for bare ESXi)
+
+The single cert from step 1 is the complete trust anchor — no chain needed. Just point CA_CERT_PATH at vcenter.pem directly.
+
+4. Test actual API communication
+bash
+/opt/vcenter-watcher/venv/bin/python3 -c "
+from pyVim.connect import SmartConnect
+import ssl
+ctx = ssl.create_default_context(cafile='/opt/vcenter-watcher/vcenter-chain.pem')
+si = SmartConnect(host='<host>', user='<user>', pwd='<password>', sslContext=ctx)
+print('apiType:', si.content.about.apiType)
+print('fullName:', si.content.about.fullName)
+"
+apiType: VirtualCenter → talking to vCenter
+apiType: HostAgent → talking directly to ESXi
+5. Restart the service once confirmed
+bash
+sudo systemctl restart vcenter-watcher
+sudo journalctl -u vcenter-watcher -f
