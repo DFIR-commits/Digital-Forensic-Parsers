@@ -1,0 +1,35 @@
+// Stage 1: narrow ClassifiedModuleLoad to candidate processes, one row per (cid, aid, TargetProcessId)
+defineTable(
+  name="cml_hits",
+  query={
+    #event_simpleName=ClassifiedModuleLoad
+    | ImageFileName=/\\example\.dll$/i            // module of interest (adjust / remove)
+    | TargetImageFileName=/\\rundll32\.exe$/i     // loading process (adjust / remove)
+    | LoadedModule := ImageFileName
+    | groupBy([cid, aid, TargetProcessId],
+        function=[
+          collect([LoadedModule, TargetImageFileName]),
+          min(@timestamp, as=FirstModuleLoad),
+          max(@timestamp, as=LastModuleLoad),
+          count(as=ModuleLoadCount)
+        ],
+        limit=max)
+  },
+  include=[cid, aid, TargetProcessId, LoadedModule, TargetImageFileName,
+           FirstModuleLoad, LastModuleLoad, ModuleLoadCount]
+)
+
+// Stage 2: pivot only into process events whose keys are in the table
+| #event_simpleName=/^(Synthetic)?ProcessRollup2$/
+| match(table="cml_hits", field=[cid, aid, TargetProcessId], strict=true)
+
+// Stage 3: presentation
+| ProcessStart    := formatTime("%F %T", field=ProcessStartTime, unit="seconds", timezone="UTC")
+| FirstModuleLoad := formatTime("%F %T", field=FirstModuleLoad, timezone="UTC")
+| LastModuleLoad  := formatTime("%F %T", field=LastModuleLoad,  timezone="UTC")
+| rename(field=ImageFileName, as=ProcessImageFileName)
+| table([cid, aid, TargetProcessId, RawProcessId,
+         LoadedModule, TargetImageFileName, ProcessImageFileName,
+         CommandLine, ParentBaseFileName, UserSid,
+         ProcessStart, FirstModuleLoad, LastModuleLoad, ModuleLoadCount],
+        limit=max)
