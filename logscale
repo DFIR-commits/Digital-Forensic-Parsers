@@ -79,3 +79,23 @@ defineTable(
          CommandLine, ParentBaseFileName, UserSid,
          ProcessStart, FirstModuleLoad, LastModuleLoad, ModuleLoadCount],
         limit=max)
+
+
+
+#event_simpleName=/^(ClassifiedModuleLoad|ModuleDetectInfo)$/
+| in(field="aid", values=["<sharepoint_aid_1>", "<sharepoint_aid_2>"])
+| case {
+    #event_simpleName=ClassifiedModuleLoad
+      | ImageFileName=/\\Microsoft\.PowerShell\.Editor\.ni\.dll$/i
+      | TargetImageFileName=/\\w3wp\.exe$/i
+      | LoadedModule := ImageFileName ;
+    #event_simpleName=ModuleDetectInfo
+      | TargetFileName=/\\Microsoft\.PowerShell\.Editor\.ni\.dll$/i
+      | LoadedModule := TargetFileName ;
+  }
+| DetectSource := #event_simpleName
+| groupBy([cid, aid, TargetProcessId],
+    function=[collect([LoadedModule, DetectSource, TargetImageFileName]),
+              min(@timestamp, as=FirstSeen),
+              count(as=Hits)],
+    limit=max)
