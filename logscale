@@ -99,3 +99,17 @@ defineTable(
               min(@timestamp, as=FirstSeen),
               count(as=Hits)],
     limit=max)
+
+
+#event_simpleName=ClassifiedModuleLoad
+| in(field="aid", values=["<sharepoint_aid_1>", "<sharepoint_aid_2>"])
+| ImageFileName=/\\Microsoft\.PowerShell\.Editor\.ni\.dll$/i
+| TargetImageFileName=/\\w3wp\.exe$/i
+| groupBy([cid, aid, TargetProcessId],
+    function=[
+      collect([ImageFileName, TargetImageFileName]),
+      min(@timestamp, as=FirstSeen),
+      max(@timestamp, as=LastSeen),
+      count(as=Hits)
+    ],
+    limit=max)
