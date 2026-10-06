@@ -1,1 +1,9 @@
 "(^|[;+\s])[A-Za-z0-9]{1,10}=(?:[A-Za-z0-9/\-]|\+(?![A-Za-z0-9]{1,10}=)){64,}={0,2}($|[;+\s])"
+
+
+
+
+| fields _time, host, c_ip, X_Forwarded_For, uri_path, Cscookie
+| regex Cscookie!="[;.]"
+| regex Cscookie="^[A-Za-z0-9]{1,10}=[A-Za-z0-9+/\-]{64,}={0,2}$"
+| table _time, host, c_ip, X_Forwarded_For, uri_path, Cscookie
