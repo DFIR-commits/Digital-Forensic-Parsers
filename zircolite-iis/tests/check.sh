@@ -9,4 +9,5 @@ docker run --rm --user "$(id -u):$(id -g)" \
   zircolite-iis -q >/dev/null 2>&1
 lines=$(docker run --rm -v "$out:/out:ro" --entrypoint python3 zircolite-iis -c \
   'import json; print(sorted(m["SourceLine"] for r in json.load(open("/out/detected.json")) for m in r["matches"]))')
+! grep -E "ERROR|WARNING" "$out/zircolite.log" || { echo "FAIL: errors in zircolite.log"; exit 1; }
 [ "$lines" = "[5, 12, 13]" ] && echo "PASS: hits on lines $lines" || { echo "FAIL: got $lines (want [5, 12, 13])"; exit 1; }

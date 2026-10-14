@@ -57,6 +57,8 @@ def write_config(seen):
     with open(f"{ZIRCOLITE}/config/config.yaml", encoding="utf-8") as f:
         config = yaml.safe_load(f)
     config["mappings"].update({name: name for name in seen if not name.isalnum()})
+    # transforms_dir is relative to the config file, and this copy lives in /tmp
+    config["transforms_dir"] = f"{ZIRCOLITE}/config/transforms/"
     with open(CONFIG, "w", encoding="utf-8") as f:
         yaml.safe_dump(config, f)
 
