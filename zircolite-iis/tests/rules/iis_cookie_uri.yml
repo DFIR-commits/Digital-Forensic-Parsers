@@ -1,0 +1,15 @@
+title: Test - Suspicious Cookie On Specific URI Stem
+id: 5f0c7a3e-0d1b-4c3a-9f2e-1a2b3c4d5e6f
+status: test
+description: Test rule for zircolite-iis. Matches a specific uri-stem with a specific cookie value.
+author: test
+date: 2026-10-14
+logsource:
+    category: webserver
+    product: iis
+detection:
+    selection:
+        cs-uri-stem|endswith: '/owa/auth/x.js'
+        cs-cookie|contains: 'X-AnonResource-Backend='
+    condition: selection
+level: high
