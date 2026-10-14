@@ -18,7 +18,7 @@ from pathlib import Path
 import yaml
 
 ZIRCOLITE = "/opt/zircolite"
-EVENTS = "/tmp/events.json"
+EVENTS = os.environ.get("EVENTS", "/tmp/events.json")  # -e EVENTS=/out/events.json keeps it
 CONFIG = "/tmp/config.yaml"
 
 

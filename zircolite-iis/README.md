@@ -31,6 +31,7 @@ docker run --rm --user "$(id -u):$(id -g)" \
 - `/logs`: a folder of W3C logs, searched recursively (`u_ex*.log`), or one file.
 - `/rules`: a folder of Sigma `.yml` rules, searched recursively. For a single rule, mount it as `-v /path/rule.yml:/rules/rule.yml:ro`.
 - Results go to `out/detected.json`, and Zircolite's own log goes to `out/zircolite.log`.
+- To keep the converted JSON (one event per line), add `-e EVENTS=/out/events.json` before `zircolite-iis`.
 - Any extra arguments go straight to Zircolite. For example, add `--csv -o /out/detected.csv`
   for CSV output, or `--min-level high` to load only rules at that level or above.
 
