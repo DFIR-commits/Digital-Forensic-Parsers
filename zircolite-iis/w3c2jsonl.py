@@ -1,8 +1,9 @@
-"""Run Zircolite on IIS W3C logs.
+"""Run Zircolite on IIS W3C logs and EVTX files.
 
-Container entrypoint: converts every W3C file under /logs to JSON lines, then runs
-Zircolite with the rules in /rules and writes results to /out. Extra arguments are
-passed to Zircolite unchanged.
+Container entrypoint: converts every W3C file under /logs to JSON lines and runs
+Zircolite with the rules in /rules (-> /out/detected.json). .evtx files under /logs
+go to Zircolite as they are, with its bundled SigmaHQ Windows ruleset or $EVTX_RULES
+(-> /out/detected_evtx.json). Extra arguments are passed to both runs unchanged.
 
 - Every #Fields: line is honoured (IIS rewrites it on restart and the set can change).
 - cs(Header) becomes the Sigma webserver name: cs(Cookie) -> cs-cookie.
@@ -12,6 +13,7 @@ passed to Zircolite unchanged.
 """
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -63,22 +65,40 @@ def write_config(seen):
         yaml.safe_dump(config, f)
 
 
+def zircolite(*args):
+    return subprocess.run(["python3", "zircolite.py", *args, *sys.argv[1:]], cwd=ZIRCOLITE).returncode
+
+
 def main():
     src = Path(os.environ.get("LOGS", "/logs"))
     files = sorted(p for p in src.rglob("*") if p.is_file()) if src.is_dir() else [src]
-    seen, total = set(), 0
+    evtx = [p for p in files if p.suffix.lower() == ".evtx"]
+    seen, total, w3c, skipped = set(), 0, 0, []
     with open(EVENTS, "w", encoding="utf-8") as out:
         for p in files:
-            total += convert(p, out, seen)
-    print(f"[+] {total} IIS events from {len(files)} file(s)", file=sys.stderr)
-    if not total:
-        sys.exit("[-] no W3C events found under " + str(src))
-    write_config(seen)
+            if p in evtx:
+                continue
+            n = convert(p, out, seen)
+            total += n
+            w3c += n > 0
+            if not n:
+                skipped.append(p)
+    print(f"[+] {total} IIS events from {w3c} W3C file(s), {len(evtx)} EVTX file(s)", file=sys.stderr)
+    if skipped:
+        print(f"[!] {len(skipped)} file(s) are neither W3C nor .evtx and were skipped: "
+              + ", ".join(map(str, skipped[:5])) + (" ..." if len(skipped) > 5 else ""), file=sys.stderr)
+    if not total and not evtx:
+        sys.exit("[-] no W3C or EVTX logs found under " + str(src))
 
-    os.chdir(ZIRCOLITE)
-    os.execvp("python3", ["python3", "zircolite.py", "-e", EVENTS, "--json-input", "-c", CONFIG,
-                          "-r", "/rules", "-o", "/out/detected.json", "-l", "/out/zircolite.log",
-                          *sys.argv[1:]])
+    rc = 0
+    if total:
+        write_config(seen)
+        rc |= zircolite("-e", EVENTS, "--json-input", "-c", CONFIG, "-r", "/rules",
+                        "-o", "/out/detected.json", "-l", "/out/zircolite.log")
+    if evtx:
+        rc |= zircolite("-e", str(src), "-r", os.environ.get("EVTX_RULES", "rules/rules_windows_merged.json"),
+                        "-o", "/out/detected_evtx.json", "-l", "/out/zircolite_evtx.log")
+    sys.exit(rc)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 # zircolite-iis
 
-Runs Sigma `webserver`/`iis` rules against IIS W3C logs with
+Runs Sigma `webserver`/`iis` rules against IIS W3C logs, and the SigmaHQ Windows rules against any `.evtx` files next to them, with
 [Zircolite](https://github.com/wagga40/Zircolite) 4.5.0, in Docker. Zircolite has no W3C
 reader, so `w3c2jsonl.py` turns the logs into JSON lines first. It reads every `#Fields:`
 header and renames `cs(Cookie)` to `cs-cookie`, `cs(User-Agent)` to `cs-user-agent` and so on.
@@ -28,18 +28,28 @@ docker run --rm --user "$(id -u):$(id -g)" \
   zircolite-iis
 ```
 
-- `/logs`: a folder of W3C logs, searched recursively (`u_ex*.log`), or one file.
-- `/rules`: a folder of Sigma `.yml` rules, searched recursively. For a single rule, mount it as `-v /path/rule.yml:/rules/rule.yml:ro`.
-- Results go to `out/detected.json`, and Zircolite's own log goes to `out/zircolite.log`.
-- To keep the converted JSON (one event per line), add `-e EVENTS=/out/events.json` before `zircolite-iis`.
-- Any extra arguments go straight to Zircolite. For example, add `--csv -o /out/detected.csv`
-  for CSV output, or `--min-level high` to load only rules at that level or above.
+- `/logs`: a folder searched recursively, or one file. It can hold IIS W3C logs, `.evtx` files, or both.
+  Any other file is skipped, with a warning naming it.
+- `/rules`: a folder of Sigma `.yml` rules for the IIS logs, searched recursively. For a single rule, mount it as `-v /path/rule.yml:/rules/rule.yml:ro`.
+- IIS results go to `out/detected.json`, and Zircolite's log to `out/zircolite.log`.
+- EVTX files are passed to Zircolite unchanged and checked against its bundled SigmaHQ Windows
+  ruleset (`rules_windows_merged.json`, about 4,500 rules). Results go to `out/detected_evtx.json`
+  and the log to `out/zircolite_evtx.log`. To use another ruleset, add
+  `-e EVTX_RULES=rules/rules_windows_all.json` (SigmaHQ plus community rules) before `zircolite-iis`.
+- To keep the converted IIS JSON (one event per line), add `-e EVENTS=/out/events.json` before `zircolite-iis`.
+- Any extra arguments after `zircolite-iis` go to both Zircolite runs. For example, `--min-level high`
+  loads only rules at that level or above, and `--working-db disk` keeps large cases out of RAM.
+  Don't pass `-o`: both runs would write to the same file.
+- Check the `.json` result files, not the console summary. A rule without `level:` matches, but the
+  summary still says "Detections None".
 
 ## Test
 
 ```sh
-sh tests/check.sh    # builds the image, runs tests/logs against tests/rules, expects hits on lines 5, 12, 13
+sh tests/check.sh    # builds the image, runs tests/logs, expects IIS hits on lines 5, 12, 13 and one EVTX hit
 ```
+
+`tests/logs/sample_bitsadmin.evtx` is a test fixture from the Zircolite repository (LGPL-3.0).
 
 Values are matched raw, exactly as IIS writes them, so a space shows up as `+`
 (`Mozilla/5.0+(Windows...`). Write rule values that way too.
