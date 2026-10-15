@@ -1,7 +1,9 @@
 """Run Zircolite on IIS W3C logs and EVTX files.
 
-Container entrypoint: converts every W3C file under /logs to JSON lines and runs
-Zircolite with the rules in /rules (-> /out/detected.json). .evtx files under /logs
+Container entrypoint: converts every W3C file under /logs to JSON lines (one output file
+per log, converted in parallel) and runs Zircolite with the rules in /rules
+(-> /out/detected.json). Separate files let Zircolite scan them in parallel too: it only
+parallelises across files, so one merged file would run on a single core. .evtx files under /logs
 go to Zircolite as they are, with its bundled SigmaHQ Windows ruleset or $EVTX_RULES
 (-> /out/detected_evtx.json). Extra arguments are passed to both runs unchanged.
 
@@ -13,14 +15,16 @@ go to Zircolite as they are, with its bundled SigmaHQ Windows ruleset or $EVTX_R
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import yaml
 
 ZIRCOLITE = "/opt/zircolite"
-EVENTS = os.environ.get("EVENTS", "/tmp/events.json")  # -e EVENTS=/out/events.json keeps it
+EVENTS = os.environ.get("EVENTS", "/tmp/events")  # a directory; -e EVENTS=/out/events keeps it
 CONFIG = "/tmp/config.yaml"
 
 
@@ -32,9 +36,11 @@ def sigma_name(field):
     return field
 
 
-def convert(path, out, seen):
-    fields, n = None, 0
-    with open(path, encoding="utf-8", errors="replace") as f:
+def convert(job):
+    """One W3C log -> one JSON-lines file. Returns (events, field names seen)."""
+    path, dest = job
+    fields, n, seen = None, 0, set()
+    with open(path, encoding="utf-8", errors="replace") as f, open(dest, "w", encoding="utf-8") as out:
         for lineno, line in enumerate(f, 1):
             line = line.rstrip("\r\n")
             if line.startswith("#Fields:"):
@@ -50,9 +56,11 @@ def convert(path, out, seen):
                     event["timestamp"] = f"{event['date']}T{event['time']}Z"
                 event["SourceFile"] = str(path)
                 event["SourceLine"] = lineno
-                out.write(json.dumps(event) + "\n")
+                out.write(json.dumps(event, separators=(",", ":")) + "\n")
                 n += 1
-    return n
+    if not n:
+        os.remove(dest)
+    return n, seen
 
 
 def write_config(seen):
@@ -73,12 +81,15 @@ def main():
     src = Path(os.environ.get("LOGS", "/logs"))
     files = sorted(p for p in src.rglob("*") if p.is_file()) if src.is_dir() else [src]
     evtx = [p for p in files if p.suffix.lower() == ".evtx"]
+    logs = [p for p in files if p not in evtx]
+    shutil.rmtree(EVENTS, ignore_errors=True)
+    os.makedirs(EVENTS)
+    # numbered names: IIS reuses file names (u_ex261001.log) across sites and hosts
+    jobs = [(p, f"{EVENTS}/{i:06d}_{p.name}.json") for i, p in enumerate(logs)]
     seen, total, w3c, skipped = set(), 0, 0, []
-    with open(EVENTS, "w", encoding="utf-8") as out:
-        for p in files:
-            if p in evtx:
-                continue
-            n = convert(p, out, seen)
+    with ProcessPoolExecutor(int(os.environ.get("WORKERS", 0)) or None) as pool:
+        for p, (n, fields) in zip(logs, pool.map(convert, jobs, chunksize=4)):
+            seen |= fields
             total += n
             w3c += n > 0
             if not n:
@@ -93,7 +104,7 @@ def main():
     rc = 0
     if total:
         write_config(seen)
-        rc |= zircolite("-e", EVENTS, "--json-input", "-c", CONFIG, "-r", "/rules",
+        rc |= zircolite("-e", EVENTS, "--json-input", "-f", "json", "-c", CONFIG, "-r", "/rules",
                         "-o", "/out/detected.json", "-l", "/out/zircolite.log")
     if evtx:
         rc |= zircolite("-e", str(src), "-r", os.environ.get("EVTX_RULES", "rules/rules_windows_merged.json"),

@@ -36,7 +36,15 @@ docker run --rm --user "$(id -u):$(id -g)" \
   ruleset (`rules_windows_merged.json`, about 4,500 rules). Results go to `out/detected_evtx.json`
   and the log to `out/zircolite_evtx.log`. To use another ruleset, add
   `-e EVTX_RULES=rules/rules_windows_all.json` (SigmaHQ plus community rules) before `zircolite-iis`.
-- To keep the converted IIS JSON (one event per line), add `-e EVENTS=/out/events.json` before `zircolite-iis`.
+- Each IIS log is converted to its own JSON-lines file, on all CPU cores, and Zircolite gets
+  the folder. Zircolite only runs in parallel across files, so this lets it use every core
+  on large cases. It picks the mode itself: many small files go into one database, large ones
+  are scanned file by file in parallel. `-w N` (after `zircolite-iis`) caps Zircolite's
+  workers; `-e WORKERS=N` caps the converter's.
+- The converted JSON is about twice the size of the logs: every line repeats each field
+  name, plus `SourceFile`, `SourceLine` and `timestamp`. It goes to `/tmp/events` inside the
+  container and is deleted with it. To keep it, add `-e EVENTS=/out/events` (a folder) before
+  `zircolite-iis`. For big cases, make sure Docker has room for it.
 - Any extra arguments after `zircolite-iis` go to both Zircolite runs. For example, `--min-level high`
   loads only rules at that level or above, and `--working-db disk` keeps large cases out of RAM.
   Don't pass `-o`: both runs would write to the same file.
