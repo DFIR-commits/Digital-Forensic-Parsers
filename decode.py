@@ -21,6 +21,7 @@ Usage:
 import argparse
 import base64
 import binascii
+import csv
 import gzip
 import re
 import sys
@@ -135,7 +136,18 @@ def main():
     df["decode_status"] = results.str[1]
     df["decode_error"] = results.str[2]
 
-    df.to_csv(args.output, index=False, encoding="utf-8-sig")
+    # Decoded payloads can contain quotes, commas, newlines and control characters.
+    # Quote every field, double any embedded quotes, and set an escapechar as a safety net.
+    df = df.apply(lambda col: col.map(lambda x: x.replace("\x00", "") if isinstance(x, str) else x))
+    df.to_csv(
+        args.output,
+        index=False,
+        encoding="utf-8-sig",
+        quoting=csv.QUOTE_ALL,
+        quotechar='"',
+        doublequote=True,
+        escapechar="\\",
+    )
 
     ok = (df["decode_error"] == "").sum()
     print(f"{len(df)} rows processed, {ok} clean, {len(df) - ok} with notes -> {args.output}")
